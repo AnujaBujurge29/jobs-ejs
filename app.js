@@ -63,11 +63,29 @@ const csrfProtection = csrf(csrf_options);
 
 app.use(flash());
 
+
 app.use(require("./middleware/storeLocals"));
+app.use((req, res, next) => {
+    if (req.path == "/multiply") {
+        res.set("Content-Type", "application/json")
+    } else {
+        res.set("Content-Type", "text/html")
+    }
+    next()
+})
 
 app.get("/", (req, res) => {
     res.render("index");
 });
+app.get("/multiply", (req, res) => {
+    const result = req.query.first * req.query.second
+    if (result.isNaN) {
+        result = "NaN"
+    } else if (result == null) {
+        result = "null"
+    }
+    res.json({ result: result })
+})
 
 app.use("/sessions", require("./routes/sessionRoutes"));
 
@@ -90,16 +108,17 @@ app.use((err, req, res, next) => {
 
 const port = process.env.PORT || 3000;
 
-const start = async () => {
+const start = () => {
     try {
-
-        await require("./db/connect")(process.env.MONGO_URI);
-        app.listen(port, () =>
-            console.log(`Server is listening on Port ${port}...`)
+        require("./db/connect")(url);
+        return app.listen(port, () =>
+            console.log(`Server is listening on port ${port}...`),
         );
     } catch (error) {
         console.log(error);
     }
 };
 
-start();
+const server = start();
+
+module.exports = { app, server };
