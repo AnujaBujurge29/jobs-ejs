@@ -1,15 +1,19 @@
 const express = require("express");
 require("express-async-errors");
+const session = require("express-session");
+const passport = require("passport");
+const flash = require("connect-flash")
+const MongoDBStore = require("connect-mongodb-session")(session);
+const bodyParser = require("body-parser");
+const csrf = require("host-csrf");
+const cookieParser = require("cookie-parser"); // Add cookie-parser middleware
+require("dotenv").config(); // to load the .env file into the process.env object
 
 const app = express();
 
 app.set("view engine", "ejs");
-app.use(require("body-parser").urlencoded({ extended: true }));
+app.use(bodyParser.urlencoded({ extended: true }));
 
-require("dotenv").config(); // to load the .env file into the process.env object
-
-const session = require("express-session");
-const MongoDBStore = require("connect-mongodb-session")(session);
 const url = process.env.MONGO_URI;
 
 const store = new MongoDBStore({
@@ -36,15 +40,28 @@ if (app.get("env") === "production") {
 
 app.use(session(sessionParms));
 
-const passport = require("passport");
 const passportInit = require("./passport/passportInit");
 
 passportInit();
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Configure cookie-parser middleware with secret
+app.use(cookieParser(process.env.SESSION_SECRET));
 
-app.use(require("connect-flash")());
+// CSRF protection middleware
+let csrf_development_mode = true;
+const csrf_options = {
+    protected_operations: ["POST"],
+    protected_content_types: ["application/json"],
+    development_mode: csrf_development_mode,
+    cooliesParser: cookieParser,
+    cookiesSecrete: process.env.COOKIES_SECRETE,
+};
+
+const csrfProtection = csrf(csrf_options);
+
+app.use(flash());
 
 app.use(require("./middleware/storeLocals"));
 
@@ -52,38 +69,15 @@ app.get("/", (req, res) => {
     res.render("index");
 });
 
-
-
-// secret word handling
-
-// app.get("/secretWord", (req, res) => {
-//     if (!req.session.secretWord) {
-//         req.session.secretWord = "syzygy";
-//     }
-//     res.locals.info = req.flash("info");
-//     res.locals.errors = req.flash("error");
-//     res.render("secretWord", { secretWord: req.session.secretWord });
-// });
-
-// app.post("/secretWord", (req, res) => {
-//     if (req.body.secretWord.toUpperCase()[0] == "P") {
-//         req.flash("error", "That word won't work!");
-//         req.flash("error", "You can't use words that start with p.");
-//     } else {
-//         req.session.secretWord = req.body.secretWord;
-//         req.flash("info", "The secret word was changed.");
-//     }
-//     res.redirect("/secretWord");
-// });
 app.use("/sessions", require("./routes/sessionRoutes"));
-
 
 const auth = require("./middleware/auth");
 
-const secretWordRouter = require("./routes/secretWord");
-app.use("/secretWord", auth, secretWordRouter);
-// app.use("/secretWord", secretWordRouter);
+const jobsRouter = require("./routes/jobs"); // Import your jobs router
+app.use("/jobs", auth, jobsRouter);
 
+const secretWordRouter = require("./routes/secretWord");
+app.use("/secretWord", auth, csrfProtection, secretWordRouter);
 
 app.use((req, res) => {
     res.status(404).send(`That page (${req.url}) was not found.`);
